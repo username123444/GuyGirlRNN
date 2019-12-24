@@ -15,6 +15,7 @@ import pandas
 import math
 
 class Trainer:
+    BATCH_SIZE_DEFAULT = "dataset_size"
     def __init__(self, training_dir, categories, model_name="trained.model", image_size=100, log_dir="logs", clear_output=True):
         self.__data_dir = training_dir
         self.__categories = categories
@@ -22,6 +23,7 @@ class Trainer:
         self.__training_data = []
         self.__log_dir = log_dir
         self.__model_name = model_name
+        self.__current_train_count = 0
         if(clear_output is True):
             if(os.path.exists("labels.pickle")):
                 os.remove("labels.pickle")
@@ -49,6 +51,7 @@ class Trainer:
                 self.__training_data.append([new_array, class_num])
             #Return the training data
         return self.__training_data
+        
     def create_new_image_data(self):
         #Create the training data
         self.__create_image_training_data()
@@ -81,7 +84,19 @@ class Trainer:
         #Close the labels save
         pickle_labels_out.close()
     
-    def train_image_model(self, validation_split=0.3, epochs=40, auto_save_trained=False, batch_size=32, create_data=True, dense_layers = [0, 1, 2], layer_sizes = [32, 64, 128], convolusion_layers = [1, 2, 3]):
+    def train_image_model(self, train_times=1, validation_split=0.3, epochs=40, auto_save_trained=False, batch_size="dataset_size", create_data=True, dense_layers = [0, 1, 2], layer_sizes = [32, 64, 128], convolusion_layers = [1, 2, 3]):
+        #Check if batch size is dataset_size
+        if(batch_size is "dataset_size"):
+            #Initiate a file counter
+            __file_counter = 0
+            #Walk through all of the files in the data dir
+            for root, dirs, files in os.walk(self.__data_dir):
+                #Loop through the files
+                for file in files:
+                    #Update our file counter
+                    __file_counter += 1
+            #Set the batch size to the file counter
+            batch_size = __file_counter
         #Check if the developer wants to create the feature sets and labels
         if(create_data):
             #Create the training data
@@ -159,22 +174,24 @@ class Trainer:
                     #Revert to old log dir
                     self.__log_dir = __old_log_dir
                     #Open our feature sets save
-                    #pickle_feature_sets_out = open("feature_sets.pickle", "wb")
+                    pickle_feature_sets_out = open("feature_sets.pickle", "wb")
                     #Save the feature sets
-                    #pickle.dump(feature_sets, pickle_feature_sets_out)
+                    pickle.dump(feature_sets, pickle_feature_sets_out)
                     #Close the feature sets save
-                    #pickle_feature_sets_out.close()
+                    pickle_feature_sets_out.close()
                     #Open our labels save
-                    #pickle_labels_out = open("labels.pickle", "wb")
+                    pickle_labels_out = open("labels.pickle", "wb")
                     #Save our labels
-                    #pickle.dump(labels, pickle_labels_out)
+                    pickle.dump(labels, pickle_labels_out)
                     #Close the labels save
-                    #pickle_labels_out.close()
+                    pickle_labels_out.close()
                     print("CURRENT DENSE:  %s out of %s"%(str(current_dense), str(total_dense)))
                     print("CURRENT LAYER SIZES: %s out of %s"%(str(current_layer), str(total_layer)))
                     print("CURRENT CONVOLUSION LAYERS: %s out of %s"%(str(current_convolusion), str(total_convolusion)))
+        if(self.__current_train_count < train_times):
+            self.train_image_model(train_times=train_times, validation_split=validation_split, epochs=epochs, auto_save_trained=auto_save_trained, batch_size=batch_size, create_data=create_data, dense_layers=dense_layers, layer_sizes=layer_sizes, convolusion_layers=convolusion_layers)
     
-    def test_image(self, image_path):
+    def test_image(self, image_path, move_after_testing=True, train_after_testing=True):
         #Load the image array
         image_array = self.prepare_image(image_path)
         #Divide the image array by 255
@@ -185,6 +202,17 @@ class Trainer:
         prediction = model.predict([image_array])
         #Round the prediction
         rounded_prediction = int(np.round(prediction))
+        #Check if we should move after testing
+        if(move_after_testing is True):
+            #Create a new path variable with the new path being in our dataset folder
+            __new_path = "{}/{}/{}".format(self.__data_dir, self.__categories[rounded_prediction], os.path.basename(image_path))
+            #Move the file
+            shutil.copy(image_path, __new_path)
+        #Check if we should train after testing
+        if(train_after_testing is True):
+            #Train again
+            print(self.__categories[prediction])
+            self.fit_image_to_saved_model(__new_path, prediction)
         #Return the prediction and the category it belongs to
         return [prediction, self.__categories[rounded_prediction]]
     
@@ -196,3 +224,21 @@ class Trainer:
         new_array = cv2.resize(image_array, (self.__image_size, self.__image_size))
         #Return the reshaped new array
         return new_array.reshape(-1, self.__image_size, self.__image_size, 1)
+    
+    def fit_image_to_saved_model(self, image_path, class_number):
+        #Get the content of the image via cv2
+        image_array = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        #Divide the image array by 255
+        image_array = image_array / 255.0
+        #Resize the image
+        new_array = cv2.resize(image_array, (self.__image_size, self.__image_size))
+        #Update our training data
+        self.__training_data.append([new_array, class_number])
+    
+    def get_categories(self):
+        #Return the categories
+        return self.__categories
+    
+    def get_training_data(self):
+        #Return the training data
+        return self.__training_data
