@@ -11,6 +11,8 @@ from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten, Conv2D,
 from tensorflow.keras.callbacks import TensorBoard
 import time
 import shutil
+import pandas
+import math
 
 class Trainer:
     def __init__(self, training_dir, categories, model_name="trained.model", image_size=100, log_dir="logs", clear_output=True):
@@ -21,13 +23,17 @@ class Trainer:
         self.__log_dir = log_dir
         self.__model_name = model_name
         if(clear_output is True):
-            os.remove("labels.pickle")
-            os.remove("feature_sets.pickle")
-            shutil.rmtree(self.__model_name)
-            shutil.rmtree("logs")
+            if(os.path.exists("labels.pickle")):
+                os.remove("labels.pickle")
+            if(os.path.exists("feature_sets.pickle")):
+                os.remove("feature_sets.pickle")
+            if(os.path.exists(self.__model_name)):
+                shutil.rmtree(self.__model_name)
+            if(os.path.exists("logs")):
+                shutil.rmtree("logs")
 
     
-    def __create_training_data(self):
+    def __create_image_training_data(self):
         for category in self.__categories:
             #Get the path of the category
             path = os.path.join(self.__data_dir, category)
@@ -43,9 +49,9 @@ class Trainer:
                 self.__training_data.append([new_array, class_num])
             #Return the training data
         return self.__training_data
-    def create_new_data(self):
+    def create_new_image_data(self):
         #Create the training data
-        self.__create_training_data()
+        self.__create_image_training_data()
         #Shuffle the training data
         random.shuffle(self.__training_data)
         #Create the feature set
@@ -75,11 +81,11 @@ class Trainer:
         #Close the labels save
         pickle_labels_out.close()
     
-    def train(self, validation_split=0.3, epochs=40, auto_save_trained=False, batch_size=32, create_data=True, dense_layers = [0, 1, 2], layer_sizes = [32, 64, 128], convolusion_layers = [1, 2, 3]):
+    def train_image_model(self, validation_split=0.3, epochs=40, auto_save_trained=False, batch_size=32, create_data=True, dense_layers = [0, 1, 2], layer_sizes = [32, 64, 128], convolusion_layers = [1, 2, 3]):
         #Check if the developer wants to create the feature sets and labels
         if(create_data):
             #Create the training data
-            self.create_new_data()
+            self.create_new_image_data()
             
         #Create an old log dir variable
         __old_log_dir = self.__log_dir
@@ -167,7 +173,8 @@ class Trainer:
                     print("CURRENT DENSE:  %s out of %s"%(str(current_dense), str(total_dense)))
                     print("CURRENT LAYER SIZES: %s out of %s"%(str(current_layer), str(total_layer)))
                     print("CURRENT CONVOLUSION LAYERS: %s out of %s"%(str(current_convolusion), str(total_convolusion)))
-    def test(self, image_path):
+    
+    def test_image(self, image_path):
         #Load the image array
         image_array = self.prepare_image(image_path)
         #Divide the image array by 255
@@ -176,8 +183,11 @@ class Trainer:
         model = tf.keras.models.load_model(self.__model_name)
         #Make a prediction
         prediction = model.predict([image_array])
-        #Return the prediction
-        return prediction
+        #Round the prediction
+        rounded_prediction = int(np.round(prediction))
+        #Return the prediction and the category it belongs to
+        return [prediction, self.__categories[rounded_prediction]]
+    
     def prepare_image(self, image_path):
         #We need to resize and grayscale our image
         #Create the image array from the content of the image
