@@ -84,7 +84,7 @@ class Trainer:
         #Close the labels save
         pickle_labels_out.close()
     
-    def train_image_model(self, train_times=1, validation_split=0.3, epochs=40, auto_save_trained=False, batch_size="dataset_size", create_data=True, dense_layers = [0, 1, 2], layer_sizes = [32, 64, 128], convolusion_layers = [1, 2, 3]):
+    def train_image_model(self, train_times=1, validation_split=0.3, epochs=100, auto_save_trained=False, batch_size=BATCH_SIZE_DEFAULT, create_data=True, dense_layers = [0], layer_sizes = [64], convolusion_layers = [3]):
         #Check if batch size is dataset_size
         if(batch_size is "dataset_size"):
             #Initiate a file counter
@@ -188,9 +188,11 @@ class Trainer:
                     print("CURRENT DENSE:  %s out of %s"%(str(current_dense), str(total_dense)))
                     print("CURRENT LAYER SIZES: %s out of %s"%(str(current_layer), str(total_layer)))
                     print("CURRENT CONVOLUSION LAYERS: %s out of %s"%(str(current_convolusion), str(total_convolusion)))
+                    self.__current_train_count += 1
         if(self.__current_train_count < train_times):
             self.train_image_model(train_times=train_times, validation_split=validation_split, epochs=epochs, auto_save_trained=auto_save_trained, batch_size=batch_size, create_data=create_data, dense_layers=dense_layers, layer_sizes=layer_sizes, convolusion_layers=convolusion_layers)
-    
+
+
     def test_image(self, image_path, move_after_testing=True, train_after_testing=True):
         #Load the image array
         image_array = self.prepare_image(image_path)
@@ -225,15 +227,66 @@ class Trainer:
         #Return the reshaped new array
         return new_array.reshape(-1, self.__image_size, self.__image_size, 1)
     
-    def fit_image_to_saved_model(self, image_path, class_number):
+    def fit_image_to_saved_model(self, image_path, class_number,train_times=1, validation_split=0.3, auto_save_trained=False, batch_size=10, create_data=True, dense_layers = [0], layer_sizes = [64], convolusion_layers = [3]):
+        #Ensure that the image cannot be fit if the feature sets are missing
+        if(os.path.exists("feature_sets.pickle") is False):
+            raise Exception("feature_sets.pickle is missing")
+        #Ensure that the image cannot be fit if the labels are missing
+        if(os.path.exists("labels.pickle") is False):
+            raise Exception("labels.pickle is missing")
         #Get the content of the image via cv2
         image_array = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         #Divide the image array by 255
         image_array = image_array / 255.0
         #Resize the image
         new_array = cv2.resize(image_array, (self.__image_size, self.__image_size))
+        self.__training_data.clear()
         #Update our training data
         self.__training_data.append([new_array, class_number])
+        #Save the data
+        #Shuffle the training data
+        random.shuffle(self.__training_data)
+        #Create the feature set
+        feature_sets = pickle.load(open("feature_sets.pickle", "rb"))
+        #Create the labels
+        labels = pickle.load(open("labels.pickle", "rb"))
+        #Open our feature sets save
+        pickle_feature_sets_out = open("feature_sets.pickle", "wb")
+        #Save the feature sets
+        pickle.dump(feature_sets, pickle_feature_sets_out)
+        #Close the feature sets save
+        pickle_feature_sets_out.close()
+        #Open our labels save
+        pickle_labels_out = open("labels.pickle", "wb")
+        #Save our labels
+        pickle.dump(labels, pickle_labels_out)
+        #Close the labels save
+        pickle_labels_out.close()
+        #Get the feature sets again
+        feature_sets = pickle.load(open("feature_sets.pickle", "rb"))
+        #Divide the feature sets by 255
+        feature_sets = feature_sets / 255.0
+        #Get the labels again
+        labels = pickle.load(open("labels.pickle", "rb"))
+        #Train the network
+        if(os.path.exists(self.__model_name)):
+            __old = self.__log_dir
+            NAME = "{}-conv-{}-nodes-{}-dense-{}".format(0, 1, 2, int(time.time()))
+            #Update the log directory
+            self.__log_dir = self.__log_dir + "/{}".format(NAME)
+            os.makedirs(self.__log_dir)
+            #Get the model
+            model = tf.keras.models.load_model(self.__model_name)
+            #Compile the model
+            model.compile(loss="binary_crossentropy",
+                        optimizer="adam",
+                        metrics=["acc"])
+            tensorboard = TensorBoard(log_dir=self.__log_dir, profile_batch = 100000000)
+            #Train the neural network
+            model.fit(feature_sets, labels, batch_size=batch_size, epochs=2, validation_split=validation_split, callbacks=[tensorboard])
+            #Save the model
+            model.save(self.__model_name)
+            self.__log_dir = __old
     
     def get_categories(self):
         #Return the categories
@@ -242,3 +295,4 @@ class Trainer:
     def get_training_data(self):
         #Return the training data
         return self.__training_data
+    
